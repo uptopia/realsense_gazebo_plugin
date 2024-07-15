@@ -1,8 +1,7 @@
 #include "realsense_gazebo_plugin/gazebo_ros_realsense.h"
 #include <sensor_msgs/fill_image.h>
 #include <sensor_msgs/point_cloud2_iterator.h>
-#include <iostream>
-using namespace std;
+
 namespace {
 std::string extractCameraName(const std::string &name);
 sensor_msgs::CameraInfo cameraInfo(const sensor_msgs::Image &image,
@@ -83,25 +82,9 @@ void GazeboRosRealsense::OnNewFrame(const rendering::CameraPtr cam,
   const auto pixel_format = supported_image_encodings.at(cam->ImageFormat());
 
   // copy from simulation image to ROS msg
-  if(camera_id=="color")
-  {
-    // cout << "colorcolorcolorcolorcolorcolorcolorcolor"<<endl;
-    fillImage(this->image_msg_, pixel_format, cam->ImageHeight(),
+  fillImage(this->image_msg_, pixel_format, cam->ImageHeight(),
             cam->ImageWidth(), cam->ImageDepth() * cam->ImageWidth(),
             reinterpret_cast<const void *>(cam->ImageData()));
-  }
-
-  // cout <<"camera_id:"<<camera_id<<endl;
-  // cout <<"frame_id :"<<this->image_msg_.header.frame_id<<endl;
-  // cout <<"height:"<<cam->ImageHeight() <<endl;
-  // cout <<"width:"<<cam->ImageWidth() <<endl;
-  // cout <<"pixel_format:"<<pixel_format<<endl;
-  // cout <<"size:" <<this->image_msg_.data.size()<<endl;
-  // // frame_id :D435i_camera_color_optical_frame
-  // // height:1080
-  // // width:1920
-  // // pixel_format:rgb8
-  // // size:6220800
 
   // identify camera rendering
   const std::map<std::string, rendering::CameraPtr> cameras = {
@@ -123,16 +106,11 @@ bool GazeboRosRealsense::FillPointCloudHelper(sensor_msgs::PointCloud2 &point_cl
                                               uint32_t rows_arg, uint32_t cols_arg,
                                               uint32_t step_arg, void *data_arg)
 {
-    // FillPointCloudHelper(this->pointcloud_msg_, this->depthCam->ImageHeight(),
-    //                      this->depthCam->ImageWidth(), 2 * this->depthCam->ImageWidth(),
-    //                      (void *)this->depthCam->DepthData());
-
   sensor_msgs::PointCloud2Modifier pcd_modifier(point_cloud_msg);
   pcd_modifier.setPointCloud2FieldsByString(2, "xyz", "rgb");
   // convert to flat array shape, we need to reconvert later
   pcd_modifier.resize(rows_arg * cols_arg);
-  // point_cloud_msg.is_dense = true;
-  point_cloud_msg.is_dense = false;
+  point_cloud_msg.is_dense = true;
 
   sensor_msgs::PointCloud2Iterator<float> iter_x(pointcloud_msg_, "x");
   sensor_msgs::PointCloud2Iterator<float> iter_y(pointcloud_msg_, "y");
@@ -144,11 +122,6 @@ bool GazeboRosRealsense::FillPointCloudHelper(sensor_msgs::PointCloud2 &point_cl
 
   double hfov = this->depthCam->HFOV().Radian();
   double fl = ((double)this->depthCam->ImageWidth()) / (2.0 * tan(hfov / 2.0));
-
-  // std::cout <<"============================================"<<std::endl;
-  // // std::cout <<"depth:"<< depth<<std::endl;
-  // std::cout <<"pointCloudCutOff_:"<< pointCloudCutOff_<<std::endl;
-  // std::cout <<"pointCloudCutOffMax_:"<< pointCloudCutOffMax_<<std::endl;
 
   // convert depth to point cloud
   for (uint32_t j = 0; j < rows_arg; j++)
@@ -171,7 +144,6 @@ bool GazeboRosRealsense::FillPointCloudHelper(sensor_msgs::PointCloud2 &point_cl
 
       if (depth > pointCloudCutOff_ && depth < pointCloudCutOffMax_)
       {
-        // std::cout <<"nan:NO\t";
         // in optical frame
         // hardcoded rotation rpy(-M_PI/2, 0, -M_PI/2) is built-in
         // to urdf, where the *_optical_frame should have above relative
@@ -182,25 +154,21 @@ bool GazeboRosRealsense::FillPointCloudHelper(sensor_msgs::PointCloud2 &point_cl
       }
       else  // point in the unseeable range
       {
-        // std::cout <<"nan:YES\t";
         *iter_x = *iter_y = *iter_z = std::numeric_limits<float>::quiet_NaN();
         point_cloud_msg.is_dense = false;
       }
 
       // put image color data for each point
       uint8_t *image_src = (uint8_t *)(&(this->image_msg_.data[0]));
-      // cout << "=========================>:" <<this->image_msg_.data.size() <<endl;
       if (this->image_msg_.data.size() == rows_arg * cols_arg * 3)
       {
         // color
-        // std::cout <<"color" <<std::endl;
-        iter_rgb[0] = image_src[i * 3 + j * cols_arg * 3 + 2]; //0
-        iter_rgb[1] = image_src[i * 3 + j * cols_arg * 3 + 1]; //1  
-        iter_rgb[2] = image_src[i * 3 + j * cols_arg * 3 + 0]; //2
+        iter_rgb[0] = image_src[i * 3 + j * cols_arg * 3 + 0];
+        iter_rgb[1] = image_src[i * 3 + j * cols_arg * 3 + 1];
+        iter_rgb[2] = image_src[i * 3 + j * cols_arg * 3 + 2];
       }
       else if (this->image_msg_.data.size() == rows_arg * cols_arg)
       {
-        // std::cout <<"mono" <<std::endl;
         // mono (or bayer?  @todo; fix for bayer)
         iter_rgb[0] = image_src[i + j * cols_arg];
         iter_rgb[1] = image_src[i + j * cols_arg];
@@ -209,7 +177,6 @@ bool GazeboRosRealsense::FillPointCloudHelper(sensor_msgs::PointCloud2 &point_cl
       else
       {
         // no image
-        // std::cout <<"no color" <<std::endl;
         iter_rgb[0] = 0;
         iter_rgb[1] = 0;
         iter_rgb[2] = 0;
@@ -220,8 +187,6 @@ bool GazeboRosRealsense::FillPointCloudHelper(sensor_msgs::PointCloud2 &point_cl
   // reconvert to original height and width after the flat reshape
   point_cloud_msg.height = rows_arg;
   point_cloud_msg.width = cols_arg;
-  // std::cout <<"height:"<< point_cloud_msg.height<<std::endl;
-  // std::cout <<"width:"<< point_cloud_msg.width<<std::endl;
   point_cloud_msg.row_step = point_cloud_msg.point_step * point_cloud_msg.width;
 
   return true;
